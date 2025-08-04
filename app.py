@@ -3,20 +3,24 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuración
-TOAST_API_KEY = st.secrets["pq-SvCvMGg7SJnWLzy81ZIxH7b1TzqDs19sltq6Ltw2CZ9-gm6zx-q1lUcY0gSYF"]
+# ✅ Leer API Key desde Streamlit Secrets (agrega esto en tu Panel de Streamlit Cloud)
+TOAST_API_KEY = st.secrets["TOAST_API_KEY"]
+
+# 📡 Configuración base
 BASE_URL = "https://api.toasttab.com/labor/v1"
 HEADERS = {
     "Authorization": f"Bearer {TOAST_API_KEY}",
     "Content-Type": "application/json"
 }
 
+# 🔄 Obtener turnos desde la API de Toast
 def get_shifts(start_date, end_date):
     url = f"{BASE_URL}/shifts?startDate={start_date}&endDate={end_date}"
     response = requests.get(url, headers=HEADERS)
     response.raise_for_status()
     return response.json().get("shifts", [])
 
+# ⚠️ Validar violaciones según ley laboral de California
 def detect_meal_violations(shifts):
     results = []
     for shift in shifts:
@@ -47,9 +51,9 @@ def detect_meal_violations(shifts):
             })
         except Exception as e:
             results.append({
-                "Employee ID": shift.get("employeeId", "unknown"),
-                "Start": "ERROR",
-                "End": "ERROR",
+                "Employee ID": shift.get("employeeId", "Unknown"),
+                "Start": "Error",
+                "End": "Error",
                 "Hours Worked": 0,
                 "Breaks (30+ min)": 0,
                 "Violation": True,
@@ -57,27 +61,33 @@ def detect_meal_violations(shifts):
             })
     return pd.DataFrame(results)
 
-# UI
-st.title("🍔 Meal Break Violations – California Labor Law")
-st.markdown("Detecta violaciones de pausas para comer según las leyes de California.")
+# 🖥️ Interfaz Streamlit
+st.set_page_config(page_title="Meal Violations", layout="wide")
+st.title("🍔 Meal Break Violations – Ley de California")
+st.markdown("Esta herramienta identifica violaciones de pausas para comer basadas en las leyes laborales de California.")
 
+# 🗓️ Selección de fechas
 col1, col2 = st.columns(2)
-start_date = col1.date_input("Start Date", datetime.now() - timedelta(days=7))
-end_date = col2.date_input("End Date", datetime.now())
+start_date = col1.date_input("📅 Fecha de inicio", datetime.now() - timedelta(days=7))
+end_date = col2.date_input("📅 Fecha de fin", datetime.now())
 
+# Validación de rango de fechas
 if start_date > end_date:
-    st.error("Start date must be before end date.")
-else:
-    if st.button("📊 Analizar turnos"):
-        with st.spinner("Conectando a Toast API y analizando..."):
-            try:
-                shifts = get_shifts(start_date.isoformat(), end_date.isoformat())
-                df = detect_meal_violations(shifts)
-                st.success(f"{len(df)} turnos analizados.")
-                st.dataframe(df, use_container_width=True)
+    st.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
+    st.stop()
 
-                csv = df.to_csv(index=False).encode("utf-8")
-                st.download_button("📥 Descargar CSV", csv, "meal_violations.csv", "text/csv")
-            except Exception as e:
-                st.error(f"Error al procesar: {e}")
+# 🔘 Botón de análisis
+if st.button("📊 Analizar turnos"):
+    with st.spinner("Conectando a Toast y analizando datos..."):
+        try:
+            shifts = get_shifts(start_date.isoformat(), end_date.isoformat())
+            df = detect_meal_violations(shifts)
 
+            st.success(f"{len(df)} turnos analizados.")
+            st.dataframe(df, use_container_width=True)
+
+            # 📥 Exportar como CSV
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Descargar CSV", csv, "meal_violations.csv", "text/csv")
+        except Exception as e:
+            st.error(f"❌ Error al obtener los turnos: {e}")
