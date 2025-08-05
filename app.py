@@ -20,13 +20,19 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             progress_bar.progress(pct, text=msg)
             time.sleep(0.4)
 
-    # Filtrar por fechas
+    # Limpiar cualquier espacio en blanco en los nombres de las columnas
+    df.columns = df.columns.str.strip()
+
+    # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
     df = df[df['Employee'].notna() & df['Date'].notna()]
+
+    # Convertir la columna 'Date' en formato datetime
     df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
 
-    # Filtrar solo el rango de fechas seleccionado
+    # Filtrar por el rango de fechas seleccionado
     df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
 
+    # Convertir las columnas 'Clock In' y 'Clock Out' en datetime
     def parse_datetime(row, date_col, time_col):
         try:
             return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
@@ -36,8 +42,11 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Clock In"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
     df["Clock Out"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
 
+    # Asegurar que las horas sean números válidos
     df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors='coerce')
     df["Estimated Overtime"] = pd.to_numeric(df.get("Estimated Overtime", 0), errors='coerce').fillna(0)
+
+    # Calcular las horas totales
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
@@ -47,8 +56,9 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
         if total_hours <= 6:
-            continue
+            continue  # Si las horas son menores o iguales a 6, no se consideran violaciones
 
+        # Buscar si hay un 'MISSED BREAK' en las anomalías
         anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
         if anomaly:
             violations.append({
