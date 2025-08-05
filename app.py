@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 # === Función para procesar CSV de Toast ===
-def process_csv_toast(file, progress_bar=None):
+def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df = pd.read_csv(file)
 
     steps = [
@@ -20,7 +20,12 @@ def process_csv_toast(file, progress_bar=None):
             progress_bar.progress(pct, text=msg)
             time.sleep(0.4)
 
+    # Filtrar por fechas
     df = df[df['Employee'].notna() & df['Date'].notna()]
+    df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
+
+    # Filtrar solo el rango de fechas seleccionado
+    df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
 
     def parse_datetime(row, date_col, time_col):
         try:
@@ -114,11 +119,17 @@ if menu == "Dashboard":
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
 
+    # Subir archivo
     file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
+
+    # Selección de fechas
+    st.markdown("### 🔥 Filtrar por rango de fechas")
+    start_date = st.date_input("Fecha de inicio", pd.to_datetime("2025-07-01"))
+    end_date = st.date_input("Fecha de fin", pd.to_datetime("2025-07-31"))
 
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, progress_bar)
+        violations_df = process_csv_toast(file, start_date, end_date, progress_bar)
         progress_bar.empty()
 
         st.balloons()
@@ -193,8 +204,3 @@ if menu == "Dashboard":
 
     else:
         st.info("📤 Por favor sube un archivo CSV exportado desde Toast para comenzar.")
-
-# Configuración (opcional)
-elif menu == "Configuración":
-    st.markdown("# ⚙️ Configuración")
-    st.info("Opciones de configuración próximamente disponibles.")
