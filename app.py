@@ -29,6 +29,10 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Convertir la columna 'Date' en formato datetime
     df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
 
+    # Convertir las fechas de inicio y fin a datetime64 (asegúrate que están en formato pandas datetime)
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+
     # Filtrar por el rango de fechas seleccionado
     df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
 
