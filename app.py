@@ -1,62 +1,62 @@
 import streamlit as st
-import requests
 import pandas as pd
 
-# — Streamlit config
-st.set_page_config(page_title="Toast API – Meal Violations", layout="wide")
-st.title("🍔 Meal Violations – Toast API")
-st.markdown("Autenticación con TOAST_MACHINE_CLIENT vía token + consulta de empleados.")
+st.set_page_config(page_title="Meal Violations – Toast", layout="wide")
+st.title("🍔 Meal Violations – Ley de California (Archivo Time Entries)")
+st.markdown("Sube un archivo CSV exportado desde Toast con datos de Time Entries para analizar violaciones de descanso para comer.")
 
-# 🔐 Secrets
-client_id = st.secrets.get("TOAST_CLIENT_ID", "")
-client_secret = st.secrets.get("TOAST_CLIENT_SECRET", "")
+uploaded_file = st.file_uploader("📂 Sube archivo CSV", type=["csv"])
 
-if not client_id or not client_secret:
-    st.error("Faltan TOAST_CLIENT_ID o TOAST_CLIENT_SECRET en tus secrets.")
-    st.stop()
-
-# ✅ Obtener token
-def get_access_token(client_id, client_secret):
-    url = "https://ws-api.toasttab.com/usermgmt/v1/oauth/token"
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "grant_type": "client_credentials",
-        "user_access_type": "TOAST_MACHINE_CLIENT"
-    }
+if uploaded_file:
     try:
-        res = requests.post(url, json=payload)
-        res.raise_for_status()
-        return res.json()["token"]["accessToken"]
-    except Exception as e:
-        st.error(f"❌ Error al obtener token: {e}")
-        return None
+        df = pd.read_csv(uploaded_file)
 
-# 📡 Consultar empleados
-def get_employees(token):
-    url = "https://ws-api.toasttab.com/labor/v1/employees"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    try:
-        res = requests.get(url, headers=headers)
-        res.raise_for_status()
-        return res.json().get("employees", [])
-    except Exception as e:
-        st.error(f"❌ Error al consultar empleados: {e}")
-        return []
+        # Limpiar filas vacías
+        df = df[df['Employee'].notna() & df['Date'].notna()]
 
-# 🚀 Flujo principal
-token = get_access_token(client_id, client_secret)
-if token:
-    st.success("✅ Token de acceso obtenido correctamente.")
+        # Convertir a datetime
+        def parse_datetime(row, date_col, time_col):
+            try:
+                return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
+            except:
+                return pd.NaT
 
-    if st.button("🔍 Consultar empleados"):
-        with st.spinner("Cargando desde Toast..."):
-            employees = get_employees(token)
-            if employees:
-                df = pd.DataFrame(employees)
-                st.dataframe(df, use_container_width=True)
+        df["Shift Start"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
+        df["Shift End"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
+        df["Hours Worked"] = (df["Shift End"] - df["Shift Start"]).dt.total_seconds() / 3600
+
+        def parse_break_duration(val):
+            try:
+                return float(val) * 60
+            except:
+                return 0.0
+
+        df["Break Minutes"] = df["Break Duration"].apply(parse_break_duration)
+
+        def detect_violation(hours, break_minutes):
+            if pd.isna(hours):
+                return "Invalid"
+            if hours > 10 and break_minutes < 60:
+                return "❌ 2 required breaks (>10h)"
+            elif hours > 5 and break_minutes < 30:
+                return "❌ 1 required break (>5h)"
             else:
-                st.warning("No se encontraron empleados.")
+                return "✅ OK"
+
+        df["Meal Violation"] = df.apply(lambda row: detect_violation(row["Hours Worked"], row["Break Minutes"]), axis=1)
+
+        # Columnas finales
+        result_df = df[[
+            "Employee", "Date", "Shift Start", "Shift End", "Hours Worked",
+            "Break Start", "Break End", "Break Duration", "Anomalies", "Meal Violation"
+        ]].copy()
+
+        st.success(f"{len(result_df)} turnos analizados.")
+        st.dataframe(result_df, use_container_width=True)
+
+        # Descargar CSV
+        csv = result_df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Descargar CSV con Violaciones", csv, "meal_violations.csv", "text/csv")
+
+    except Exception as e:
+        st.error(f"❌ Error al procesar el archivo: {e}")
