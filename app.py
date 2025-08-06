@@ -46,23 +46,12 @@ def process_csv_toast(file, progress_bar=None):
     grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
     violations = []
 
-    # Verificación de las filas antes de las comparaciones
-    st.write("Valores únicos de Break Duration:", df["Break Duration"].unique())  # Mostrar valores únicos para revisión
-
     # Buscar violaciones en cada grupo de empleado y fecha
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Condición adicional: Verificar si las horas totales son mayores a 6
-        if total_hours <= 6:
-            continue  # Si las horas totales son menores o iguales a 6, no se considera violación
-
         # Criterio 1: Si la columna 'Break Duration' tiene el valor "MISSED" o su duración es mayor a 0.50, es una violación
-        missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
-
-        # Depuración: Verificar las violaciones encontradas
-        if not missed_break.empty:
-            st.write(f"Violaciones encontradas para {name} el {date}:", missed_break)
+        missed_break = group[(group["Break Duration"].isna()) | (group["Break Duration"] > 0.50)]
 
         if not missed_break.empty:  # Si hay una violación de comida
             violations.append({
