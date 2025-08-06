@@ -49,7 +49,7 @@ def process_csv_toast(file, progress_bar=None):
 
         # Criterio 1: Si trabajó más de 6 horas y no tomó descanso (Violación de comida)
         if total_hours > 6:
-            missed_break = group.query('`Break Response` == "MISSED"')
+            missed_break = group.query('`Break Response` == "MISSED" or `Break Response` == "No"')
             if not missed_break.empty:  # Si el empleado no tomó el descanso
                 violations.append({
                     "Nombre": name,
