@@ -43,6 +43,9 @@ def process_csv_toast(file, progress_bar=None):
     grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
     violations = []
 
+    # Asegurarse de que 'Break Duration' sea numérico para las comparaciones
+    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')  # Convierte a numérico y maneja errores
+
     # Buscar violaciones en cada grupo de empleado y fecha
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
