@@ -164,7 +164,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Empleado'].nunique()  # Usando "Empleado"
+        unique_employees = violations_df['employee'].nunique()  # Usando "employee" en minúsculas
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -198,7 +198,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Empleado"].value_counts().reset_index()  # Usando "Empleado"
+        violation_counts = violations_df["employee"].value_counts().reset_index()  # Usando "employee" en minúsculas
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
