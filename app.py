@@ -23,6 +23,9 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Limpiar cualquier espacio en blanco en los nombres de las columnas
     df.columns = df.columns.str.strip()
 
+    # Verificar las columnas disponibles
+    st.write("Columnas disponibles en el DataFrame:", df.columns.tolist())
+
     # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
     df = df[df['Employee'].notna() & df['Date'].notna()]
 
