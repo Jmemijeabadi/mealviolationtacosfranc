@@ -40,7 +40,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Filtrar por el rango de fechas seleccionado
     df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
 
-    # Convertir las columnas 'Clock In' y 'Clock Out' en datetime
+    # Convertir las columnas 'Time In' y 'Time Out' en datetime
     def parse_datetime(row, date_col, time_col):
         try:
             return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
@@ -58,29 +58,26 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    # Normalizar nombres de columnas (quitar espacios y convertir a minúsculas)
-    df.columns = df.columns.str.strip().str.lower()
-
-    # Verificar la presencia de la columna 'employee' (en minúsculas)
-    if 'employee' in df.columns:
+    # Verificar que 'Employee' esté presente
+    if 'Employee' in df.columns:
         # Agrupar los datos por empleado y fecha
-        grouped = df.groupby(["employee", "date"])
+        grouped = df.groupby(["Employee", "Date"])
         violations = []
 
         # Buscar violaciones
         for (name, date), group in grouped:
-            total_hours = group["total hours"].sum()
+            total_hours = group["Total Hours"].sum()
             if total_hours <= 6:
                 continue  # Si las horas son menores o iguales a 6, no se consideran violaciones
 
             # Buscar si hay un 'MISSED BREAK' en las anomalías
-            anomaly = group["anomalies"].astype(str).str.contains("MISSED BREAK").any()
+            anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,  # Usamos "employee"
+                    "Empleado": name,  # Usamos "Employee"
                     "Fecha": date,
-                    "Horas Regulares": round(group["regular hours"].sum(), 2),
-                    "Horas Overtime": round(group["estimated overtime"].sum(), 2),
+                    "Horas Regulares": round(group["Regular Hours"].sum(), 2),
+                    "Horas Overtime": round(group["Estimated Overtime"].sum(), 2),
                     "Total Horas Día": round(total_hours, 2),
                     "Violación": "MISSED BREAK"
                 })
@@ -164,7 +161,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['employee'].nunique()  # Usando "employee" en minúsculas
+        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" exactamente como en el archivo
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -198,7 +195,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["employee"].value_counts().reset_index()  # Usando "employee" en minúsculas
+        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" exactamente
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
