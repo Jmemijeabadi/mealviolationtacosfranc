@@ -51,10 +51,12 @@ def process_csv_toast(file, progress_bar=None):
         total_hours = group["Total Hours"].sum()
 
         # Excluir las filas donde 'Break Duration' sea NaN o vacía
-        missed_break = group[(group["Break Duration"].isna()) | (group["Break Duration"] > 0.50) | (group["Break Duration"] == "MISSED")]
+        missed_break = group[(group["Break Duration"].isna()) | 
+                             (group["Break Duration"] > 0.50) | 
+                             (group["Break Duration"] == "MISSED")]
 
-        # Si hay violaciones de comida (por "MISSED" o duración > 0.50), agregamos a la lista
-        if not missed_break.empty:  # Si hay una violación de comida
+        # Si hay violaciones de comida Y las horas totales son mayores a 6
+        if not missed_break.empty and total_hours > 6:  # Condición adicional para Total Hours
             violations.append({
                 "Nombre": name,
                 "Date": date,
