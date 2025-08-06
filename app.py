@@ -20,8 +20,7 @@ def process_csv_toast(file, progress_bar=None):
             progress_bar.progress(pct, text=msg)
             time.sleep(0.4)
 
-    # Filtrar registros nulos en 'Employee' y 'Date'
-    df = df[df['Employee'].notna() & df['Date'].notna()]
+    df = df[df['Employee'].notna() & df['Date'].notna()]  # Filtrar registros nulos en 'Employee' y 'Date'
 
     # Convertir las columnas de fecha y hora
     def parse_datetime(row, date_col, time_col):
