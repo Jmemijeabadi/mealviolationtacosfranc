@@ -44,8 +44,7 @@ def process_csv_toast(file, progress_bar=None):
     # Limpiar espacios y convertir 'Break Duration' a numérico, manejar los errores de conversión
     df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')  # Convertimos a numérico, 'MISSED' se convertirá en NaN
 
-    # Agrupar por empleado y fecha
-    grouped = df.groupby(["Employee", "Date"]) 
+    grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
     violations = []
 
     # Buscar violaciones en cada grupo de empleado y fecha
@@ -53,7 +52,7 @@ def process_csv_toast(file, progress_bar=None):
         total_hours = group["Total Hours"].sum()
 
         # Criterio 1: Si 'Break Duration' es "MISSED" o > 0.50, es una violación
-        # Criterio 2: Si 'Break Duration' está vacía o NaN, no es considerada violación
+        # Criterio 2: Si 'Break Duration' está vacío o NaN, NO es considerada violación
         missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
 
         # Excluir las filas donde 'Break Duration' sea NaN (vacío)
