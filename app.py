@@ -76,7 +76,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             anomaly = group["anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,  # Usamos "Employee" o "Empleado" según lo que se desee mostrar
+                    "Empleado": name,  # Usamos "Employee"
                     "Fecha": date,
                     "Horas Regulares": round(group["regular hours"].sum(), 2),
                     "Horas Overtime": round(group["estimated overtime"].sum(), 2),
@@ -163,7 +163,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Empleado'].nunique()  # Usando "Empleado"
+        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee"
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -197,7 +197,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Empleado"].value_counts().reset_index()  # Usando "Empleado"
+        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee"
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
