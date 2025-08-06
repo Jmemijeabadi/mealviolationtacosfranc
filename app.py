@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 # === Función para procesar CSV de Toast ===
-def process_csv_toast(file, start_date, end_date, progress_bar=None):
-    # Leer el archivo CSV
+def process_csv_toast(file, progress_bar=None):
     df = pd.read_csv(file)
 
     steps = [
@@ -21,31 +20,8 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             progress_bar.progress(pct, text=msg)
             time.sleep(0.4)
 
-    # Limpiar cualquier espacio en blanco en los nombres de las columnas
-    df.columns = df.columns.str.strip()
-
-    # Verificar las columnas disponibles después de la limpieza
-    st.write("Columnas disponibles en el DataFrame:", df.columns.tolist())
-
-    # Verificar si la columna 'Employee' existe en las columnas
-    if 'Employee' not in df.columns:
-        st.error("No se encontró la columna 'Employee' en el archivo CSV. Por favor, revisa los datos.")
-        st.stop()
-
-    # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
     df = df[df['Employee'].notna() & df['Date'].notna()]
 
-    # Convertir la columna 'Date' en formato datetime
-    df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
-
-    # Convertir las fechas de inicio y fin a datetime64 (asegúrate que están en formato pandas datetime)
-    start_date = pd.to_datetime(start_date)
-    end_date = pd.to_datetime(end_date)
-
-    # Filtrar por el rango de fechas seleccionado
-    df = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
-
-    # Convertir las columnas 'Time In' y 'Time Out' en datetime
     def parse_datetime(row, date_col, time_col):
         try:
             return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
@@ -55,42 +31,31 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Clock In"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
     df["Clock Out"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
 
-    # Asegurar que las horas sean números válidos
     df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors='coerce')
     df["Estimated Overtime"] = pd.to_numeric(df.get("Estimated Overtime", 0), errors='coerce').fillna(0)
-
-    # Calcular las horas totales
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    # Verificar que 'Employee' esté presente
-    if 'Employee' in df.columns:
-        # Agrupar los datos por empleado y fecha
-        grouped = df.groupby(["Employee", "Date"])
-        violations = []
+    grouped = df.groupby(["Employee", "Date"])
+    violations = []
 
-        # Buscar violaciones
-        for (name, date), group in grouped:
-            total_hours = group["Total Hours"].sum()
-            if total_hours <= 6:
-                continue  # Si las horas son menores o iguales a 6, no se consideran violaciones
+    for (name, date), group in grouped:
+        total_hours = group["Total Hours"].sum()
+        if total_hours <= 6:
+            continue
 
-            # Buscar si hay un 'MISSED BREAK' en las anomalías
-            anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
-            if anomaly:
-                violations.append({
-                    "Empleado": name,  # Usamos "Employee"
-                    "Fecha": date,
-                    "Horas Regulares": round(group["Regular Hours"].sum(), 2),
-                    "Horas Overtime": round(group["Estimated Overtime"].sum(), 2),
-                    "Total Horas Día": round(total_hours, 2),
-                    "Violación": "MISSED BREAK"
-                })
+        anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
+        if anomaly:
+            violations.append({
+                "Nombre": name,
+                "Date": date,
+                "Regular Hours": round(group["Regular Hours"].sum(), 2),
+                "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
+                "Total Horas Día": round(total_hours, 2),
+                "Violación": "MISSED BREAK"
+            })
 
-        return pd.DataFrame(violations)
-    else:
-        st.error("No se encontró la columna 'Employee'. Revisa los datos.")
-        st.stop()
+    return pd.DataFrame(violations)
 
 # === Configuración Streamlit ===
 st.set_page_config(page_title="Meal Violations Toast", page_icon="🍳", layout="wide")
@@ -149,25 +114,19 @@ if menu == "Dashboard":
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
 
-    # Subir archivo
     file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
-
-    # Selección de fechas
-    st.markdown("### 🔥 Filtrar por rango de fechas")
-    start_date = st.date_input("Fecha de inicio", pd.to_datetime("2025-07-01"))
-    end_date = st.date_input("Fecha de fin", pd.to_datetime("2025-07-31"))
 
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, start_date, end_date, progress_bar)
+        violations_df = process_csv_toast(file, progress_bar)
         progress_bar.empty()
 
         st.balloons()
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" exactamente
-        dates_analyzed = violations_df['Fecha'].nunique()
+        unique_employees = violations_df['Nombre'].nunique()
+        dates_analyzed = violations_df['Date'].nunique()
 
         st.markdown("## 📈 Resumen General")
         col1, col2, col3 = st.columns(3)
@@ -200,7 +159,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" exactamente
+        violation_counts = violations_df["Nombre"].value_counts().reset_index()
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
@@ -234,3 +193,8 @@ if menu == "Dashboard":
 
     else:
         st.info("📤 Por favor sube un archivo CSV exportado desde Toast para comenzar.")
+
+# Configuración (opcional)
+elif menu == "Configuración":
+    st.markdown("# ⚙️ Configuración")
+    st.info("Opciones de configuración próximamente disponibles.")
