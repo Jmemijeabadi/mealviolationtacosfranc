@@ -50,13 +50,9 @@ def process_csv_toast(file, progress_bar=None):
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Criterios de violación:
-        # 1. Si 'Break Duration' es "MISSED"
-        # 2. Si 'Break Duration' es mayor a 0.50
-        missed_break = group[
-            (group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)
-        ]
-        
+        # Criterio 1: Si la columna 'Break Duration' tiene el valor "MISSED" o su duración es mayor a 0.50, es una violación
+        missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
+
         # Excluir las filas donde Break Duration es NaN o vacío
         missed_break = missed_break[missed_break["Break Duration"].notna()]
 
