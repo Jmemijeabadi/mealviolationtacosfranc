@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 # === Función para procesar CSV de Toast ===
-def process_csv_toast(file, start_date, end_date, progress_bar=None):
+def process_csv_toast(file, progress_bar=None):
     df = pd.read_csv(file)
 
     steps = [
@@ -21,12 +21,6 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             time.sleep(0.4)
 
     df = df[df['Employee'].notna() & df['Date'].notna()]
-
-    # Convertir la columna 'Date' en formato datetime
-    df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
-
-    # Filtrar por el rango de fechas seleccionado
-    df = df[(df['Date'] >= pd.to_datetime(start_date)) & (df['Date'] <= pd.to_datetime(end_date))]
 
     def parse_datetime(row, date_col, time_col):
         try:
@@ -53,7 +47,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
         anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
         if anomaly:
             violations.append({
-                "Employee": name,
+                "Nombre": name,
                 "Date": date,
                 "Regular Hours": round(group["Regular Hours"].sum(), 2),
                 "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
@@ -122,21 +116,16 @@ if menu == "Dashboard":
 
     file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
 
-    # Selección de fechas
-    st.markdown("### 🔥 Filtrar por rango de fechas")
-    start_date = st.date_input("Fecha de inicio", pd.to_datetime("2025-07-01"))
-    end_date = st.date_input("Fecha de fin", pd.to_datetime("2025-07-31"))
-
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, start_date, end_date, progress_bar)
+        violations_df = process_csv_toast(file, progress_bar)
         progress_bar.empty()
 
         st.balloons()
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" correctamente
+        unique_employees = violations_df['Nombre'].nunique()
         dates_analyzed = violations_df['Date'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -170,7 +159,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" correctamente
+        violation_counts = violations_df["Nombre"].value_counts().reset_index()
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
