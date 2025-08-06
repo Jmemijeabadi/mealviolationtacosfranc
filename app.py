@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 
 # === Función para procesar CSV de Toast ===
-def process_csv_toast(file, progress_bar=None):
+def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df = pd.read_csv(file)
 
     steps = [
@@ -21,6 +21,10 @@ def process_csv_toast(file, progress_bar=None):
             time.sleep(0.4)
 
     df = df[df['Employee'].notna() & df['Date'].notna()]
+
+    # Filtrar por el rango de fechas seleccionado
+    df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
+    df = df[(df['Date'] >= pd.to_datetime(start_date)) & (df['Date'] <= pd.to_datetime(end_date))]
 
     def parse_datetime(row, date_col, time_col):
         try:
@@ -114,11 +118,17 @@ if menu == "Dashboard":
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
 
+    # Subir archivo
     file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
+
+    # Selección de fechas
+    st.markdown("### 🔥 Filtrar por rango de fechas")
+    start_date = st.date_input("Fecha de inicio", pd.to_datetime("2025-07-01"))
+    end_date = st.date_input("Fecha de fin", pd.to_datetime("2025-07-31"))
 
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, progress_bar)
+        violations_df = process_csv_toast(file, start_date, end_date, progress_bar)
         progress_bar.empty()
 
         st.balloons()
