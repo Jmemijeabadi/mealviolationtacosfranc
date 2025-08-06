@@ -27,12 +27,13 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Verificar las columnas disponibles después de la limpieza
     st.write("Columnas disponibles en el DataFrame:", df.columns.tolist())
 
-    # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
-    if 'Employee' in df.columns:
-        df = df[df['Employee'].notna() & df['Date'].notna()]
-    else:
-        st.error("No se encontró la columna 'Employee'. Revisa los datos.")
+    # Verificar si la columna 'Employee' existe en las columnas
+    if 'Employee' not in df.columns:
+        st.error("No se encontró la columna 'Employee' en el archivo CSV. Por favor, revisa los datos.")
         st.stop()
+
+    # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
+    df = df[df['Employee'].notna() & df['Date'].notna()]
 
     # Convertir la columna 'Date' en formato datetime
     df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
