@@ -22,8 +22,10 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
 
     df = df[df['Employee'].notna() & df['Date'].notna()]
 
-    # Filtrar por el rango de fechas seleccionado
+    # Convertir la columna 'Date' en formato datetime
     df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
+
+    # Filtrar por el rango de fechas seleccionado
     df = df[(df['Date'] >= pd.to_datetime(start_date)) & (df['Date'] <= pd.to_datetime(end_date))]
 
     def parse_datetime(row, date_col, time_col):
@@ -51,7 +53,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
         anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
         if anomaly:
             violations.append({
-                "Nombre": name,
+                "Employee": name,
                 "Date": date,
                 "Regular Hours": round(group["Regular Hours"].sum(), 2),
                 "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
@@ -118,7 +120,6 @@ if menu == "Dashboard":
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
 
-    # Subir archivo
     file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
 
     # Selección de fechas
@@ -135,7 +136,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Nombre'].nunique()
+        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" correctamente
         dates_analyzed = violations_df['Date'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -169,7 +170,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Nombre"].value_counts().reset_index()
+        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" correctamente
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
