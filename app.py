@@ -3,68 +3,80 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 
-# === Función para procesar CSV de Toast ===
-def process_csv_toast(file, progress_bar=None):
-    df = pd.read_csv(file)
+# === Funciones auxiliares ===
+def process_excel(file, progress_bar=None):
+    time.sleep(0.5)
+    df = pd.read_excel(file, sheet_name=0, header=9)
 
     steps = [
-        ("📂 Cargando archivo...", 0.2),
-        ("⏱️ Convirtiendo horarios...", 0.4),
-        ("🧮 Calculando horas totales...", 0.6),
-        ("🔍 Buscando violaciones...", 0.8),
-        ("✅ Finalizando...", 1.0)
+        ("Procesando nombres...", 0.2),
+        ("Convirtiendo fechas y horas...", 0.4),
+        ("Calculando horas totales...", 0.6),
+        ("Agrupando datos...", 0.8),
+        ("Finalizando...", 1.0)
     ]
 
     if progress_bar:
         for msg, pct in steps:
             progress_bar.progress(pct, text=msg)
-            time.sleep(0.4)
+            time.sleep(0.5)
 
-    df = df[df['Employee'].notna() & df['Date'].notna()]
+    # Llenar los nombres de los empleados (si están vacíos)
+    df["Nombre"] = df["Name"].where(df["Clock in Date and Time"] == "-", None)
+    df["Nombre"] = df["Nombre"].ffill()
 
-    def parse_datetime(row, date_col, time_col):
-        try:
-            return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
-        except:
-            return pd.NaT
-
-    df["Clock In"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
-    df["Clock Out"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
-
+    # Convertir las fechas y horas
+    df["Clock In"] = pd.to_datetime(df["Clock in Date and Time"], errors='coerce')
     df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors='coerce')
-    df["Estimated Overtime"] = pd.to_numeric(df.get("Estimated Overtime", 0), errors='coerce').fillna(0)
-    df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
+    df["Overtime Hours"] = pd.to_numeric(df.get("Overtime Hours", 0), errors='coerce').fillna(0)
+
+    # Calcular las horas totales
+    df["Total Hours"] = df["Regular Hours"] + df["Overtime Hours"]
     df["Date"] = df["Clock In"].dt.date
 
-    grouped = df.groupby(["Employee", "Date"])
+    # Agrupar por nombre de empleado y fecha
+    grouped = df.groupby(["Nombre", "Date"])
     violations = []
 
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
-        if total_hours <= 6:
-            continue
 
-        anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
-        if anomaly:
-            violations.append({
-                "Nombre": name,
-                "Date": date,
-                "Regular Hours": round(group["Regular Hours"].sum(), 2),
-                "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
-                "Total Horas Día": round(total_hours, 2),
-                "Violación": "MISSED BREAK"
-            })
+        # Criterio 1: Si trabajó más de 6 horas y no tomó un descanso
+        if total_hours > 6:
+            on_breaks = group.query('`Clock Out Status` == "On break"')
+            if on_breaks.empty:
+                violations.append({
+                    "Nombre": name,
+                    "Date": date,
+                    "Regular Hours": "No Break Taken",
+                    "Overtime Hours": round(group["Overtime Hours"].sum(), 2),
+                    "Total Horas Día": round(total_hours, 2)
+                })
+
+        # Criterio 2: Si trabajó más de 5 horas y el descanso fue después de ese tiempo
+        elif total_hours > 5:
+            on_breaks = group.query('`Clock Out Status` == "On break"')
+            if not on_breaks.empty:
+                first_break = on_breaks.iloc[0]
+                if first_break["Regular Hours"] > 5:  # Si el primer descanso es después de 5 horas
+                    violations.append({
+                        "Nombre": name,
+                        "Date": date,
+                        "Regular Hours": round(first_break["Regular Hours"], 2),
+                        "Overtime Hours": round(group["Overtime Hours"].sum(), 2),
+                        "Total Horas Día": round(total_hours, 2)
+                    })
 
     return pd.DataFrame(violations)
 
-# === Configuración Streamlit ===
-st.set_page_config(page_title="Meal Violations Toast", page_icon="🍳", layout="wide")
+# === Configuración inicial Streamlit ===
+st.set_page_config(page_title="Meal Violations Dashboard", page_icon="🍳", layout="wide")
 
 # Sidebar
 st.sidebar.title("Menú Principal")
 menu = st.sidebar.radio("Navegación", ("Dashboard", "Configuración"))
 
-# === Estilos Freedash ===
+# === Estilos CSS personalizados para Freedash Style ===
 st.markdown("""
     <style>
     body {
@@ -106,19 +118,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# === Dashboard principal ===
+# === Encabezado personalizado ===
 if menu == "Dashboard":
     st.markdown("""
         <h1 style='text-align: center; color: #343a40;'>🍳 Meal Violations Dashboard</h1>
-        <p style='text-align: center; color: #6c757d;'>Based on Toast Time Entries CSV – By Jordan Memije</p>
+        <p style='text-align: center; color: #6c757d;'>Broken Yolk - By Jordan Memije</p>
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
 
-    file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
+    file = st.file_uploader("📤 Sube tu archivo Excel de Time Card Detail", type=["xlsx"])
 
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, progress_bar)
+        violations_df = process_excel(file, progress_bar)
         progress_bar.empty()
 
         st.balloons()
@@ -132,30 +144,16 @@ if menu == "Dashboard":
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Violaciones Detectadas</div>
-                    <div class="card-value">{total_violations}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("""<div class="metric-card"><div class="card-title">Violaciones Detectadas</div><div class="card-value">{}</div></div>""".format(total_violations), unsafe_allow_html=True)
 
         with col2:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Empleados Afectados</div>
-                    <div class="card-value">{unique_employees}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("""<div class="metric-card"><div class="card-title">Empleados Afectados</div><div class="card-value">{}</div></div>""".format(unique_employees), unsafe_allow_html=True)
 
         with col3:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Días Analizados</div>
-                    <div class="card-value">{dates_analyzed}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("""<div class="metric-card"><div class="card-title">Días Analizados</div><div class="card-value">{}</div></div>""".format(dates_analyzed), unsafe_allow_html=True)
 
         st.markdown("---")
+
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
@@ -192,9 +190,8 @@ if menu == "Dashboard":
         )
 
     else:
-        st.info("📤 Por favor sube un archivo CSV exportado desde Toast para comenzar.")
+        st.info("📤 Por favor sube un archivo Excel para comenzar.")
 
-# Configuración (opcional)
 elif menu == "Configuración":
     st.markdown("# ⚙️ Configuración")
     st.info("Opciones de configuración próximamente disponibles.")
