@@ -62,12 +62,10 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    # Verificar que 'Employee' esté presente (en caso de que el nombre cambie por espacios u otros caracteres)
-    employee_column = next((col for col in df.columns if 'employee' in col.lower()), None)
-
-    if employee_column:
+    # Verificar que 'Employee' esté presente
+    if 'Employee' in df.columns:
         # Agrupar los datos por empleado y fecha
-        grouped = df.groupby([employee_column, "Date"])
+        grouped = df.groupby(["Employee", "Date"])
         violations = []
 
         # Buscar violaciones
@@ -80,7 +78,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,  # Usamos el nombre de la columna 'Employee' encontrado
+                    "Empleado": name,  # Usamos "Employee"
                     "Fecha": date,
                     "Horas Regulares": round(group["Regular Hours"].sum(), 2),
                     "Horas Overtime": round(group["Estimated Overtime"].sum(), 2),
@@ -167,7 +165,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Empleado'].nunique()  # Usando "Empleado"
+        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" exactamente
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -201,7 +199,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Empleado"].value_counts().reset_index()  # Usando "Empleado"
+        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" exactamente
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
