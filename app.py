@@ -20,7 +20,8 @@ def process_csv_toast(file, progress_bar=None):
             progress_bar.progress(pct, text=msg)
             time.sleep(0.4)
 
-    df = df[df['Employee'].notna() & df['Date'].notna()]  # Filtrar registros nulos en 'Employee' y 'Date'
+    # Filtrar registros nulos en 'Employee' y 'Date'
+    df = df[df['Employee'].notna() & df['Date'].notna()]
 
     # Convertir las columnas de fecha y hora
     def parse_datetime(row, date_col, time_col):
@@ -43,20 +44,22 @@ def process_csv_toast(file, progress_bar=None):
     # Limpiar espacios y convertir 'Break Duration' a numérico, manejar los errores de conversión
     df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')  # Convertimos a numérico, 'MISSED' se convertirá en NaN
 
-    grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
+    # Agrupar por empleado y fecha
+    grouped = df.groupby(["Employee", "Date"]) 
     violations = []
 
     # Buscar violaciones en cada grupo de empleado y fecha
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Criterio 1: Si la columna 'Break Duration' tiene el valor "MISSED" o su duración es mayor a 0.50, es una violación
+        # Criterio 1: Si 'Break Duration' es "MISSED" o > 0.50, es una violación
+        # Criterio 2: Si 'Break Duration' está vacía o NaN, no es considerada violación
         missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
 
-        # Excluir las filas donde Break Duration es NaN o vacío
+        # Excluir las filas donde 'Break Duration' sea NaN (vacío)
         missed_break = missed_break[missed_break["Break Duration"].notna()]
 
-        # Si hay violaciones de comida (por "MISSED" o duración > 0.50), las agregamos a la lista de violaciones
+        # Si hay violaciones de comida (por "MISSED" o duración > 0.50), agregamos a la lista
         if not missed_break.empty:  # Si hay una violación de comida
             violations.append({
                 "Nombre": name,
