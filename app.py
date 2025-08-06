@@ -53,9 +53,11 @@ def process_csv_toast(file, progress_bar=None):
         # Criterios de violación:
         # 1. Si 'Break Duration' es "MISSED"
         # 2. Si 'Break Duration' es mayor a 0.50
-        missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
-
-        # No contar como violación si Break Duration está vacía o NaN
+        missed_break = group[
+            (group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)
+        ]
+        
+        # Excluir las filas donde Break Duration es NaN o vacío
         missed_break = missed_break[missed_break["Break Duration"].notna()]
 
         # Si hay violaciones de comida (por "MISSED" o duración > 0.50), las agregamos a la lista de violaciones
