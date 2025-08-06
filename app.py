@@ -47,32 +47,18 @@ def process_csv_toast(file, progress_bar=None):
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Criterio 1: Si trabajó más de 6 horas y no tomó descanso (Violación de comida)
-        if total_hours > 6:
-            missed_break = group.query('`Break Response` == "MISSED" or `Break Response` == "No"')
-            if not missed_break.empty:  # Si el empleado no tomó el descanso
-                violations.append({
-                    "Nombre": name,
-                    "Date": date,
-                    "Regular Hours": "No Break Taken",
-                    "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
-                    "Total Horas Día": round(total_hours, 2),
-                    "Violación": "No Break Taken"
-                })
-        
-        # Criterio 2: Si trabajó más de 5 horas y el descanso fue después de ese tiempo
-        elif total_hours > 5:
-            missed_break = group.query('`Break Response` == "MISSED"')
-            if not missed_break.empty:  # Si el descanso se toma después de las 5 horas
-                first_break = missed_break.iloc[0]  # Primer descanso
-                violations.append({
-                    "Nombre": name,
-                    "Date": date,
-                    "Regular Hours": round(first_break["Regular Hours"], 2),
-                    "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
-                    "Total Horas Día": round(total_hours, 2),
-                    "Violación": "Break After 5 Hours"
-                })
+        # Criterio 1: Si la columna 'Break Duration' tiene el valor "MISSED" o su duración es mayor a 0.50, es una violación
+        missed_break = group.query('`Break Duration` == "MISSED" or `Break Duration` > 0.50')
+
+        if not missed_break.empty:  # Si hay una violación de comida
+            violations.append({
+                "Nombre": name,
+                "Date": date,
+                "Regular Hours": round(group["Regular Hours"].sum(), 2),
+                "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
+                "Total Horas Día": round(total_hours, 2),
+                "Violación": "Meal Violation"
+            })
 
     return pd.DataFrame(violations)
 
