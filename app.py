@@ -54,27 +54,37 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    grouped = df.groupby(["Employee", "Date"])
-    violations = []
+    # Normalizar nombres de columnas (quitar espacios y convertir a minúsculas)
+    df.columns = df.columns.str.strip().str.lower()
 
-    for (name, date), group in grouped:
-        total_hours = group["Total Hours"].sum()
-        if total_hours <= 6:
-            continue  # Si las horas son menores o iguales a 6, no se consideran violaciones
+    # Verificar que 'nombre' esté presente
+    if 'employee' in df.columns:
+        # Agrupar los datos por empleado y fecha
+        grouped = df.groupby(["employee", "date"])
+        violations = []
 
-        # Buscar si hay un 'MISSED BREAK' en las anomalías
-        anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
-        if anomaly:
-            violations.append({
-                "Nombre": name,
-                "Date": date,
-                "Regular Hours": round(group["Regular Hours"].sum(), 2),
-                "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
-                "Total Horas Día": round(total_hours, 2),
-                "Violación": "MISSED BREAK"
-            })
+        # Buscar violaciones
+        for (name, date), group in grouped:
+            total_hours = group["total hours"].sum()
+            if total_hours <= 6:
+                continue  # Si las horas son menores o iguales a 6, no se consideran violaciones
 
-    return pd.DataFrame(violations)
+            # Buscar si hay un 'MISSED BREAK' en las anomalías
+            anomaly = group["anomalies"].astype(str).str.contains("MISSED BREAK").any()
+            if anomaly:
+                violations.append({
+                    "Nombre": name,
+                    "Fecha": date,
+                    "Horas Regulares": round(group["regular hours"].sum(), 2),
+                    "Horas Overtime": round(group["estimated overtime"].sum(), 2),
+                    "Total Horas Día": round(total_hours, 2),
+                    "Violación": "MISSED BREAK"
+                })
+
+        return pd.DataFrame(violations)
+    else:
+        st.error("No se encontró la columna 'Employee'. Revisa los datos.")
+        st.stop()
 
 # === Configuración Streamlit ===
 st.set_page_config(page_title="Meal Violations Toast", page_icon="🍳", layout="wide")
@@ -151,7 +161,7 @@ if menu == "Dashboard":
 
         total_violations = len(violations_df)
         unique_employees = violations_df['Nombre'].nunique()
-        dates_analyzed = violations_df['Date'].nunique()
+        dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
         col1, col2, col3 = st.columns(3)
