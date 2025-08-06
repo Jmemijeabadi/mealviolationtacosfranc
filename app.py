@@ -76,7 +76,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             anomaly = group["anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,
+                    "Empleado": name,  # Usamos "Employee" o "Empleado" según lo que se desee mostrar
                     "Fecha": date,
                     "Horas Regulares": round(group["regular hours"].sum(), 2),
                     "Horas Overtime": round(group["estimated overtime"].sum(), 2),
