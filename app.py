@@ -53,7 +53,7 @@ def process_csv_toast(file, progress_bar=None):
         # Criterio 1: Si la columna 'Break Duration' tiene el valor "MISSED" o su duración es mayor a 0.50, es una violación
         missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
 
-        # Si 'Break Duration' tiene "MISSED" o mayor a 0.50, se considera violación
+        # Solo contar como violación si 'Break Duration' tiene valor 'MISSED' o > 0.50 (y no sea NaN)
         if not missed_break.empty:  # Si hay una violación de comida
             violations.append({
                 "Nombre": name,
