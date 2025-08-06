@@ -43,13 +43,14 @@ def process_csv_toast(file, progress_bar=None):
     grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
     violations = []
 
+    # Buscar violaciones en cada grupo de empleado y fecha
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Criterio 1: Si trabajó más de 6 horas y no tomó descanso
+        # Criterio 1: Si trabajó más de 6 horas y no tomó descanso (Violación de comida)
         if total_hours > 6:
-            on_breaks = group.query('`Clock Out Status` == "On break"')
-            if on_breaks.empty:
+            missed_break = group.query('`Break Response` == "MISSED"')
+            if not missed_break.empty:  # Si el empleado no tomó el descanso
                 violations.append({
                     "Nombre": name,
                     "Date": date,
@@ -61,18 +62,17 @@ def process_csv_toast(file, progress_bar=None):
         
         # Criterio 2: Si trabajó más de 5 horas y el descanso fue después de ese tiempo
         elif total_hours > 5:
-            on_breaks = group.query('`Clock Out Status` == "On break"')
-            if not on_breaks.empty:
-                first_break = on_breaks.iloc[0]
-                if first_break["Regular Hours"] > 5:  # Si el primer descanso es después de 5 horas
-                    violations.append({
-                        "Nombre": name,
-                        "Date": date,
-                        "Regular Hours": round(first_break["Regular Hours"], 2),
-                        "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
-                        "Total Horas Día": round(total_hours, 2),
-                        "Violación": "Break After 5 Hours"
-                    })
+            missed_break = group.query('`Break Response` == "MISSED"')
+            if not missed_break.empty:  # Si el descanso se toma después de las 5 horas
+                first_break = missed_break.iloc[0]  # Primer descanso
+                violations.append({
+                    "Nombre": name,
+                    "Date": date,
+                    "Regular Hours": round(first_break["Regular Hours"], 2),
+                    "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
+                    "Total Horas Día": round(total_hours, 2),
+                    "Violación": "Break After 5 Hours"
+                })
 
     return pd.DataFrame(violations)
 
@@ -125,7 +125,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# === Encabezado personalizado ===
+# === Dashboard principal ===
 if menu == "Dashboard":
     st.markdown("""
         <h1 style='text-align: center; color: #343a40;'>🍳 Meal Violations Dashboard</h1>
