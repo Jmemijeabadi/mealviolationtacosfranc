@@ -24,11 +24,15 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Limpiar cualquier espacio en blanco en los nombres de las columnas
     df.columns = df.columns.str.strip()
 
-    # Verificar las columnas disponibles
+    # Verificar las columnas disponibles después de la limpieza
     st.write("Columnas disponibles en el DataFrame:", df.columns.tolist())
 
     # Filtrar solo las filas que contienen valores en 'Employee' y 'Date'
-    df = df[df['Employee'].notna() & df['Date'].notna()]
+    if 'Employee' in df.columns:
+        df = df[df['Employee'].notna() & df['Date'].notna()]
+    else:
+        st.error("No se encontró la columna 'Employee'. Revisa los datos.")
+        st.stop()
 
     # Convertir la columna 'Date' en formato datetime
     df['Date'] = pd.to_datetime(df['Date'], format="%b %d, %Y")
@@ -58,10 +62,12 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    # Verificar que 'Employee' esté presente
-    if 'Employee' in df.columns:
+    # Verificar que 'Employee' esté presente (en caso de que el nombre cambie por espacios u otros caracteres)
+    employee_column = next((col for col in df.columns if 'employee' in col.lower()), None)
+
+    if employee_column:
         # Agrupar los datos por empleado y fecha
-        grouped = df.groupby(["Employee", "Date"])
+        grouped = df.groupby([employee_column, "Date"])
         violations = []
 
         # Buscar violaciones
@@ -74,7 +80,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             anomaly = group["Anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,  # Usamos "Employee"
+                    "Empleado": name,  # Usamos el nombre de la columna 'Employee' encontrado
                     "Fecha": date,
                     "Horas Regulares": round(group["Regular Hours"].sum(), 2),
                     "Horas Overtime": round(group["Estimated Overtime"].sum(), 2),
@@ -161,7 +167,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee" exactamente como en el archivo
+        unique_employees = violations_df['Empleado'].nunique()  # Usando "Empleado"
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -195,7 +201,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee" exactamente
+        violation_counts = violations_df["Empleado"].value_counts().reset_index()  # Usando "Empleado"
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
