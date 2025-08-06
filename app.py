@@ -41,8 +41,7 @@ def process_csv_toast(file, progress_bar=None):
     df["Date"] = df["Clock In"].dt.date
 
     # Limpiar espacios y convertir 'Break Duration' a numérico, manejar los errores de conversión
-    # Convertimos a numérico y las celdas con texto como 'MISSED' se volverán NaN
-    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')
+    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')  # Convertimos a numérico, 'MISSED' se convertirá en NaN
 
     grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
     violations = []
@@ -51,10 +50,11 @@ def process_csv_toast(file, progress_bar=None):
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Criterio 1: Si 'Break Duration' es "MISSED" o su valor es mayor a 0.50, es una violación
+        # Criterios de violación:
+        # Si 'Break Duration' es "MISSED" o su valor es mayor a 0.50, es una violación
         missed_break = group[(group["Break Duration"] == "MISSED") | (group["Break Duration"] > 0.50)]
 
-        # Solo contar como violación si la columna 'Break Duration' tiene el valor "MISSED" o es mayor a 0.50
+        # Si hay violaciones de comida (por "MISSED" o duración > 0.50), las agregamos a la lista de violaciones
         if not missed_break.empty:  # Si hay una violación de comida
             violations.append({
                 "Nombre": name,
