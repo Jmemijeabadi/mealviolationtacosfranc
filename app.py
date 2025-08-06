@@ -52,7 +52,7 @@ def process_csv_toast(file, progress_bar=None):
 
         # Excluir las filas donde 'Break Duration' sea NaN o vacía
         missed_break = group[(group["Break Duration"].isna()) | 
-                             (group["Break Duration"] > 0.50) | 
+                             (group["Break Duration"] < 0.50) |  # Ahora es menor a 0.50 horas
                              (group["Break Duration"] == "MISSED")]
 
         # Si hay violaciones de comida Y las horas totales son mayores a 6
