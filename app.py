@@ -5,6 +5,7 @@ import time
 
 # === Función para procesar CSV de Toast ===
 def process_csv_toast(file, start_date, end_date, progress_bar=None):
+    # Leer el archivo CSV
     df = pd.read_csv(file)
 
     steps = [
@@ -163,7 +164,7 @@ if menu == "Dashboard":
         st.success('✅ Análisis completado.')
 
         total_violations = len(violations_df)
-        unique_employees = violations_df['Employee'].nunique()  # Usando "Employee"
+        unique_employees = violations_df['Empleado'].nunique()  # Usando "Empleado"
         dates_analyzed = violations_df['Fecha'].nunique()
 
         st.markdown("## 📈 Resumen General")
@@ -197,7 +198,7 @@ if menu == "Dashboard":
         st.markdown("## 📋 Detalle de Violaciones")
         st.dataframe(violations_df, use_container_width=True)
 
-        violation_counts = violations_df["Employee"].value_counts().reset_index()  # Usando "Employee"
+        violation_counts = violations_df["Empleado"].value_counts().reset_index()  # Usando "Empleado"
         violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
         st.markdown("## 📊 Violaciones por Empleado")
