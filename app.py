@@ -57,7 +57,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Normalizar nombres de columnas (quitar espacios y convertir a minúsculas)
     df.columns = df.columns.str.strip().str.lower()
 
-    # Verificar que 'nombre' esté presente
+    # Verificar que 'employee' esté presente
     if 'employee' in df.columns:
         # Agrupar los datos por empleado y fecha
         grouped = df.groupby(["employee", "date"])
