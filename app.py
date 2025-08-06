@@ -61,7 +61,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
     # Normalizar nombres de columnas (quitar espacios y convertir a minúsculas)
     df.columns = df.columns.str.strip().str.lower()
 
-    # Verificar que 'employee' esté presente
+    # Verificar la presencia de la columna 'employee' (en minúsculas)
     if 'employee' in df.columns:
         # Agrupar los datos por empleado y fecha
         grouped = df.groupby(["employee", "date"])
@@ -77,7 +77,7 @@ def process_csv_toast(file, start_date, end_date, progress_bar=None):
             anomaly = group["anomalies"].astype(str).str.contains("MISSED BREAK").any()
             if anomaly:
                 violations.append({
-                    "Empleado": name,  # Usamos "Employee"
+                    "Empleado": name,  # Usamos "employee"
                     "Fecha": date,
                     "Horas Regulares": round(group["regular hours"].sum(), 2),
                     "Horas Overtime": round(group["estimated overtime"].sum(), 2),
