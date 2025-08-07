@@ -69,7 +69,7 @@ def process_csv_toast(file, progress_bar=None):
     return pd.DataFrame(violations)
 
 # === Configuración Streamlit ===
-st.set_page_config(page_title="Meal Violations Toast", page_icon="🍳", layout="wide")
+st.set_page_config(page_title="Meal Violations Toast", page_icon="🌮", layout="wide")
 
 # Sidebar
 st.sidebar.title("Menú Principal")
