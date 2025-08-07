@@ -120,7 +120,7 @@ st.markdown("""
 # === Dashboard principal ===
 if menu == "Dashboard":
     st.markdown("""
-        <h1 style='text-align: center; color: #343a40;'>🌮 Meal Violations Dashboard</h1>
+        <h1 style='text-align: center; color: #343a40;'>🌮 Meal Violations Tacos Franc</h1>
         <p style='text-align: center; color: #6c757d;'>Based on Toast Time Entries CSV – By Jordan Memije</p>
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
