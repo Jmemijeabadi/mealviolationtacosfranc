@@ -121,7 +121,7 @@ st.markdown("""
 if menu == "Dashboard":
     st.markdown("""
 <h1 style='text-align: center; color: #343a40;'>Meal Violations Detector </h1> </br>
-        <h1 style='text-align: center; color: #343a40;'><img src='https://images.getbento.com/accounts/e295605eee035b8615f9938b68875d4d/media/images/56037logo-new.png' width='80'>Tacos Franc + <img src='https://images.squarespace-cdn.com/content/v1/59096b52be6594072324fc26/1600073858899-LPQOYZLSNPWLKC8LFPKI/Marufuku+Logo_R_102819-05_white.png?format=500w' width='80'> Marufuku Ramen</h1>
+        <h1 style='text-align: center; color: #343a40;'>Tacos Franc + Marufuku Ramen</h1>
         <p style='text-align: center; color: #6c757d;'>Based on Toast Time Entries CSV – By Jordan Memije</p>
         <hr style='margin-top: 0px;'>
     """, unsafe_allow_html=True)
