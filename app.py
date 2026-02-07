@@ -2,9 +2,18 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import time
+import altair as alt # Recomendado para gráficos mejores
 
-# === Función para procesar CSV de Toast ===
-def process_csv_toast(file, progress_bar=None):
+# === 1. Inicialización de Estado (Memoria de la App) ===
+if 'meal_limit_hours' not in st.session_state:
+    st.session_state['meal_limit_hours'] = 6.0 # Default: 6 horas
+
+if 'min_break_minutes' not in st.session_state:
+    st.session_state['min_break_minutes'] = 30 # Default: 30 minutos
+
+# === Función para procesar CSV de Toast (Actualizada) ===
+# Ahora recibe limit_hours y min_break_hours como argumentos
+def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
     df = pd.read_csv(file)
 
     steps = [
@@ -18,11 +27,10 @@ def process_csv_toast(file, progress_bar=None):
     if progress_bar:
         for msg, pct in steps:
             progress_bar.progress(pct, text=msg)
-            time.sleep(0.4)
+            # time.sleep(0.4) # Comentado para hacerlo más rápido, descomenta si prefieres el efecto
 
-    df = df[df['Employee'].notna() & df['Date'].notna()]  # Filtrar registros nulos en 'Employee' y 'Date'
+    df = df[df['Employee'].notna() & df['Date'].notna()]
 
-    # Convertir las columnas de fecha y hora
     def parse_datetime(row, date_col, time_col):
         try:
             return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
@@ -32,31 +40,28 @@ def process_csv_toast(file, progress_bar=None):
     df["Clock In"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
     df["Clock Out"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
 
-    # Convertir 'Regular Hours' y 'Estimated Overtime' a números
     df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors='coerce')
     df["Estimated Overtime"] = pd.to_numeric(df.get("Estimated Overtime", 0), errors='coerce').fillna(0)
-
-    # Calcular 'Total Hours' sumando las horas regulares y las horas extras
+    
     df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
     df["Date"] = df["Clock In"].dt.date
 
-    # Limpiar espacios y convertir 'Break Duration' a numérico, manejar los errores de conversión
-    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce')  # Convertimos a numérico, 'MISSED' se convertirá en NaN
+    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce') 
 
-    grouped = df.groupby(["Employee", "Date"])  # Agrupar por empleado y fecha
+    grouped = df.groupby(["Employee", "Date"]) 
     violations = []
 
-    # Buscar violaciones en cada grupo de empleado y fecha
     for (name, date), group in grouped:
         total_hours = group["Total Hours"].sum()
 
-        # Excluir las filas donde 'Break Duration' sea NaN o vacía
+        # === Lógica Dinámica ===
+        # Usamos la variable min_break_hours pasada como argumento
         missed_break = group[(group["Break Duration"].isna()) | 
-                             (group["Break Duration"] < 0.50) |  # Ahora es menor a 0.50 horas
+                             (group["Break Duration"] < min_break_hours) | # <--- DYNAMIC
                              (group["Break Duration"] == "MISSED")]
 
-        # Si hay violaciones de comida Y las horas totales son mayores a 6
-        if not missed_break.empty and total_hours > 6:  # Condición adicional para Total Hours
+        # Usamos la variable limit_hours pasada como argumento
+        if not missed_break.empty and total_hours > limit_hours: # <--- DYNAMIC
             violations.append({
                 "Nombre": name,
                 "Date": date,
@@ -78,134 +83,145 @@ menu = st.sidebar.radio("Navegación", ("Dashboard", "Configuración"))
 # === Estilos Freedash ===
 st.markdown("""
     <style>
-    body {
-        background-color: #f4f6f9;
-    }
+    body { background-color: #f4f6f9; }
     header, footer {visibility: hidden;}
-    .block-container {
-        padding-top: 2rem;
-    }
+    .block-container { padding-top: 2rem; }
     .metric-card {
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        text-align: center;
+        background: white; padding: 20px; border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center;
     }
-    .card-title {
-        font-size: 18px;
-        color: #6c757d;
-        margin-bottom: 0.5rem;
-    }
-    .card-value {
-        font-size: 30px;
-        font-weight: bold;
-        color: #343a40;
-    }
+    .card-title { font-size: 18px; color: #6c757d; margin-bottom: 0.5rem; }
+    .card-value { font-size: 30px; font-weight: bold; color: #343a40; }
     .stButton > button {
-        background-color: #009efb;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 8px;
-        font-weight: bold;
+        background-color: #009efb; color: white; padding: 0.75rem 1.5rem;
+        border: none; border-radius: 8px; font-weight: bold; width: 100%;
     }
-    .stButton > button:hover {
-        background-color: #007acc;
-        color: white;
-    }
+    .stButton > button:hover { background-color: #007acc; color: white; }
     </style>
 """, unsafe_allow_html=True)
 
 # === Dashboard principal ===
 if menu == "Dashboard":
     st.markdown("""
-<h1 style='text-align: center; color: #343a40;'>Meal Violations Detector </h1> </br>
-        <h1 style='text-align: center; color: #343a40;'>Tacos Franc + Marufuku Ramen</h1>
-        <p style='text-align: center; color: #6c757d;'>Based on Toast Time Entries CSV – By Jordan Memije</p>
+        <h1 style='text-align: center; color: #343a40;'>Meal Violations Detector</h1>
+        <p style='text-align: center; color: #6c757d;'>
+            Reglas actuales: Turnos > <b>{}h</b> | Descanso mín: <b>{} min</b>
+        </p>
         <hr style='margin-top: 0px;'>
-    """, unsafe_allow_html=True)
+    """.format(st.session_state['meal_limit_hours'], st.session_state['min_break_minutes']), unsafe_allow_html=True)
 
-    file = st.file_uploader("📤 Sube tu archivo CSV de Time Entries exportado desde Toast", type=["csv"])
+    file = st.file_uploader("📤 Sube tu archivo CSV de Toast", type=["csv"])
 
     if file:
         progress_bar = st.progress(0, text="Iniciando análisis...")
-        violations_df = process_csv_toast(file, progress_bar)
+        
+        # Convertimos minutos a horas para la lógica (ej. 30 min / 60 = 0.5h)
+        min_break_hours = st.session_state['min_break_minutes'] / 60.0
+        
+        # Pasamos las variables de session_state a la función
+        violations_df = process_csv_toast(
+            file, 
+            limit_hours=st.session_state['meal_limit_hours'],
+            min_break_hours=min_break_hours,
+            progress_bar=progress_bar
+        )
         progress_bar.empty()
 
-        st.balloons()
-        st.success('✅ Análisis completado.')
+        if not violations_df.empty:
+            st.success('✅ Análisis completado.')
+            
+            total_violations = len(violations_df)
+            unique_employees = violations_df['Nombre'].nunique()
+            dates_analyzed = violations_df['Date'].nunique()
 
-        total_violations = len(violations_df)
-        unique_employees = violations_df['Nombre'].nunique()
-        dates_analyzed = violations_df['Date'].nunique()
+            st.markdown("## 📈 Resumen General")
+            col1, col2, col3 = st.columns(3)
 
-        st.markdown("## 📈 Resumen General")
-        col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Violaciones Detectadas</div><div class="card-value">{total_violations}</div></div>""", unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Empleados Afectados</div><div class="card-value">{unique_employees}</div></div>""", unsafe_allow_html=True)
+            with col3:
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Días Analizados</div><div class="card-value">{dates_analyzed}</div></div>""", unsafe_allow_html=True)
 
-        with col1:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Violaciones Detectadas</div>
-                    <div class="card-value">{total_violations}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("## 📋 Detalle de Violaciones")
+            st.dataframe(violations_df, use_container_width=True)
 
-        with col2:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Empleados Afectados</div>
-                    <div class="card-value">{unique_employees}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            violation_counts = violations_df["Nombre"].value_counts().reset_index()
+            violation_counts.columns = ["Empleado", "Número de Violaciones"]
 
-        with col3:
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="card-title">Días Analizados</div>
-                    <div class="card-value">{dates_analyzed}</div>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown("## 📊 Violaciones por Empleado")
+            col_graph, col_table = st.columns([2, 1])
 
-        st.markdown("---")
-        st.markdown("## 📋 Detalle de Violaciones")
-        st.dataframe(violations_df, use_container_width=True)
+            with col_graph:
+                # Versión interactiva (más moderna)
+                chart = alt.Chart(violation_counts).mark_bar(color="#009efb", cornerRadiusEnd=5).encode(
+                    x=alt.X('Número de Violaciones', title='Total Violaciones'),
+                    y=alt.Y('Empleado', sort='-x', title=''),
+                    tooltip=['Empleado', 'Número de Violaciones']
+                ).properties(height=400)
+                st.altair_chart(chart, use_container_width=True)
 
-        violation_counts = violations_df["Nombre"].value_counts().reset_index()
-        violation_counts.columns = ["Empleado", "Número de Violaciones"]
+            with col_table:
+                st.dataframe(violation_counts, use_container_width=True)
 
-        st.markdown("## 📊 Violaciones por Empleado")
-        col_graph, col_table = st.columns([2, 1])
+            csv = violations_df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Descargar CSV", data=csv, file_name="meal_violations.csv", mime="text/csv")
+        else:
+            st.balloons()
+            st.success("¡Felicidades! No se encontraron violaciones con los parámetros actuales.")
 
-        with col_graph:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.barh(violation_counts["Empleado"], violation_counts["Número de Violaciones"], color="#009efb")
-            ax.set_xlabel("Número de Violaciones")
-            ax.set_ylabel("Empleado")
-            ax.set_title("Violaciones por Empleado", fontsize=14)
-            st.pyplot(fig)
-
-        with col_table:
-            st.dataframe(violation_counts, use_container_width=True)
-
-        st.markdown("---")
-
-        high_violators = violation_counts[violation_counts["Número de Violaciones"] > 10]
-        if not high_violators.empty:
-            st.error("🚨 Atención: Hay empleados con más de 10 violaciones detectadas!")
-            st.dataframe(high_violators, use_container_width=True)
-
-        csv = violations_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Descargar resultados en CSV",
-            data=csv,
-            file_name="meal_violations.csv",
-            mime="text/csv"
+# === Pestaña de Configuración ===
+elif menu == "Configuración":
+    st.markdown("# ⚙️ Configuración de Auditoría")
+    st.markdown("Ajusta las reglas para la detección de violaciones.")
+    
+    st.markdown("---")
+    
+    col_config1, col_config2 = st.columns(2)
+    
+    with col_config1:
+        st.markdown("### 🕒 Reglas de Turno")
+        
+        # Input para Horas Totales
+        new_limit = st.number_input(
+            "Límite de horas para exigir Meal Break (Horas)",
+            min_value=4.0, 
+            max_value=12.0, 
+            value=st.session_state['meal_limit_hours'],
+            step=0.5,
+            help="Si un empleado trabaja más de estas horas, debe tener un descanso registrado."
+        )
+        
+        # Input para Duración del Descanso
+        new_break_min = st.number_input(
+            "Duración mínima aceptable del descanso (Minutos)", 
+            min_value=10, 
+            max_value=60, 
+            value=int(st.session_state['min_break_minutes']),
+            step=5,
+            help="Cualquier descanso menor a esto se considerará una violación."
         )
 
-    else:
-        st.info("📤 Por favor sube un archivo CSV exportado desde Toast para comenzar.")
+        # Botón para guardar
+        if st.button("💾 Guardar Configuración"):
+            st.session_state['meal_limit_hours'] = new_limit
+            st.session_state['min_break_minutes'] = new_break_min
+            st.success("Configuración actualizada. Vuelve al Dashboard para analizar con las nuevas reglas.")
 
-elif menu == "Configuración":
-    st.markdown("# ⚙️ Configuración")
-    st.info("Opciones de configuración próximamente disponibles.")
+    with col_config2:
+        st.info(f"""
+        **Configuración Actual:**
+        
+        * **Límite de turno:** > {st.session_state['meal_limit_hours']} horas
+        * **Descanso mínimo:** {st.session_state['min_break_minutes']} minutos
+        
+        Si cambias estos valores, asegúrate de presionar "Guardar" y volver a cargar tu archivo en el Dashboard.
+        """)
+        
+        # Botón de Reset
+        if st.button("🔄 Restaurar valores por defecto"):
+            st.session_state['meal_limit_hours'] = 6.0
+            st.session_state['min_break_minutes'] = 30
+            st.rerun()
