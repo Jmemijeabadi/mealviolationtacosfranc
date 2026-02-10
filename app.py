@@ -10,7 +10,7 @@ if 'meal_limit_hours' not in st.session_state:
 if 'min_break_minutes' not in st.session_state:
     st.session_state['min_break_minutes'] = 30 # CA Law: 30 minutes
 
-# === Función Lógica Principal (REFACTORIZADA) ===
+# === Función Lógica Principal ===
 def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
     df = pd.read_csv(file)
     
@@ -63,7 +63,7 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
         reg_hours = group['Regular Hours'].sum()
         ot_hours = group['Estimated Overtime'].sum()
         
-        # Determinar el verdadero inicio del turno (la primera entrada del día)
+        # Determinar el verdadero inicio del turno
         valid_starts = group['DateTime_In'].dropna()
         if valid_starts.empty:
             continue
@@ -72,8 +72,7 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
         # Recolectar TODOS los descansos válidos del día
         valid_breaks = []
         for _, row in group.iterrows():
-            if row['Break Duration'] >= min_break_hours: # Filtro de duración mínima (ej. 30 min)
-                # Calcular hora real del descanso relativa al inicio
+            if row['Break Duration'] >= min_break_hours: 
                 b_start = parse_time_conditional(shift_start, row['Break Start'], shift_start)
                 if pd.notna(b_start):
                     valid_breaks.append(b_start)
@@ -93,7 +92,6 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
                 violation_type = "Missed Meal Break"
                 details = f"Turno de {total_hours:.2f}h sin descanso válido."
             else:
-                # Verificar si el PRIMER descanso fue tarde
                 first_break = valid_breaks[0]
                 if first_break > deadline_5th:
                     violation_type = "Late Meal Break"
@@ -101,7 +99,6 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
                     limit_str = deadline_5th.strftime('%I:%M %p')
                     details = f"Descanso a las {break_time_str} (Límite: {limit_str})"
 
-        # Si ya hay violación, la guardamos. Si no, revisamos el 2do descanso.
         if violation_type:
             violations.append({
                 "Nombre": emp,
@@ -114,15 +111,11 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
             })
         
         # Regla 2: Violación de 2do Descanso (> 10 horas)
-        # Nota: CA exige 2do descanso a las 10h. Se puede renunciar si < 12h.
         if total_hours > 10.0:
             deadline_10th = shift_start + timedelta(hours=10)
             
-            # Necesitamos al menos 2 descansos
             if len(valid_breaks) < 2:
-                waiver_status = "(Posible Waiver)" if total_hours <= 12.0 else "(NO Renunciable >12h)"
-                # Solo agregamos si no hay ya una violación de "Missed Meal" (para no duplicar penalidad visual)
-                # O si queremos reportar ambas. Reportemos ambas para claridad.
+                waiver_status = "(Waivable)" if total_hours <= 12.0 else "(NON-Waivable >12h)"
                 violations.append({
                     "Nombre": emp,
                     "Date": date_str,
@@ -133,7 +126,6 @@ def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
                     "Detalles": f"Turno > 10h. Solo {len(valid_breaks)} descansos. {waiver_status}"
                 })
             elif len(valid_breaks) >= 2:
-                # Verificar si el 2do descanso fue tarde (después de la hora 10)
                 second_break = valid_breaks[1]
                 if second_break > deadline_10th:
                     violations.append({
@@ -182,8 +174,6 @@ if menu == "Dashboard":
 
     if file:
         progress_bar = st.progress(0, text="Leyendo archivo...")
-        
-        # Conversión de minutos a horas para la lógica interna
         min_break_hours = st.session_state['min_break_minutes'] / 60.0
         
         violations_df = process_csv_toast(
@@ -197,19 +187,52 @@ if menu == "Dashboard":
         if not violations_df.empty:
             st.success(f'✅ Análisis completado. Se encontraron {len(violations_df)} posibles violaciones.')
             
-            # Métricas
+            # --- SECCIÓN 1: Métricas Globales ---
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown(f"""<div class="metric-card"><div class="card-title">Total Violaciones</div><div class="card-value">{len(violations_df)}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Total Incidencias</div><div class="card-value">{len(violations_df)}</div></div>""", unsafe_allow_html=True)
             with col2:
-                st.markdown(f"""<div class="metric-card"><div class="card-title">Empleados Únicos</div><div class="card-value">{violations_df['Nombre'].nunique()}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Empleados Afectados</div><div class="card-value">{violations_df['Nombre'].nunique()}</div></div>""", unsafe_allow_html=True)
             with col3:
                 st.markdown(f"""<div class="metric-card"><div class="card-title">Late Breaks</div><div class="card-value">{len(violations_df[violations_df['Violación'].str.contains('Late')])}</div></div>""", unsafe_allow_html=True)
 
+            # --- SECCIÓN 2: Reporte Agrupado (LO NUEVO) ---
             st.markdown("---")
-            st.markdown("### 📋 Detalle de Incidencias")
+            st.markdown("### 📊 Resumen Ejecutivo por Empleado")
             
-            # Formato condicional para la tabla
+            # Crear tabla pivote: Filas=Empleados, Columnas=Tipo de Violación, Valores=Conteo
+            summary_df = violations_df.groupby(['Nombre', 'Violación']).size().unstack(fill_value=0)
+            summary_df['Total Violaciones'] = summary_df.sum(axis=1) # Suma total por fila
+            summary_df = summary_df.sort_values('Total Violaciones', ascending=False).reset_index()
+            
+            col_summary_table, col_summary_chart = st.columns([1.5, 1])
+            
+            with col_summary_table:
+                st.dataframe(summary_df, use_container_width=True)
+                
+                # Botón de descarga para el resumen agrupado
+                csv_summary = summary_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="⬇️ Descargar Resumen Agrupado (CSV)", 
+                    data=csv_summary, 
+                    file_name="resumen_violaciones_por_empleado.csv", 
+                    mime="text/csv",
+                    help="Descarga una tabla con el total de violaciones por cada empleado."
+                )
+
+            with col_summary_chart:
+                 chart = alt.Chart(summary_df).mark_bar(color="#ff6b6b").encode(
+                    x=alt.X('Total Violaciones', title='Cantidad'),
+                    y=alt.Y('Nombre', sort='-x', title=''),
+                    tooltip=['Nombre', 'Total Violaciones']
+                ).properties(height=350)
+                 st.altair_chart(chart, use_container_width=True)
+
+
+            # --- SECCIÓN 3: Detalle Completo ---
+            st.markdown("---")
+            st.markdown("### 📋 Detalle de Incidencias (Fila por Fila)")
+            
             st.dataframe(
                 violations_df.style.applymap(
                     lambda x: 'color: red; font-weight: bold' if 'Missing' in str(x) else ('color: orange' if 'Late' in str(x) else ''), 
@@ -218,21 +241,8 @@ if menu == "Dashboard":
                 use_container_width=True
             )
 
-            # Gráfico Interactivo
-            st.markdown("### 📊 Incidencias por Empleado")
-            chart_data = violations_df["Nombre"].value_counts().reset_index()
-            chart_data.columns = ["Empleado", "Violaciones"]
-            
-            chart = alt.Chart(chart_data).mark_bar(color="#ff6b6b").encode(
-                x=alt.X('Violaciones', title='Cantidad'),
-                y=alt.Y('Empleado', sort='-x', title=''),
-                tooltip=['Empleado', 'Violaciones']
-            ).properties(height=350)
-            st.altair_chart(chart, use_container_width=True)
-
-            # Descarga
-            csv = violations_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Descargar Reporte CSV", data=csv, file_name="auditoria_meal_break.csv", mime="text/csv")
+            csv_full = violations_df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ Descargar Detalle Completo (CSV)", data=csv_full, file_name="detalle_meal_break.csv", mime="text/csv")
         
         else:
             st.balloons()
@@ -268,5 +278,5 @@ elif menu == "Configuración":
         **Guía Rápida:**
         * **5.0 Horas:** En CA, el descanso debe comenzar *antes* de terminar la 5ta hora de trabajo.
         * **Double Clock-outs:** El sistema ahora agrupa automáticamente turnos partidos en el mismo día.
-        * **2nd Meal:** Se detectará automáticamente si faltan 2dos descansos en turnos > 10 horas.
+        * **Resumen Agrupado:** Ahora puedes descargar una tabla de totales por empleado en la sección principal.
         """)
