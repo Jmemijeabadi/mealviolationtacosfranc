@@ -1,124 +1,191 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import time
-import altair as alt # Recomendado para gráficos mejores
+import altair as alt
+from datetime import timedelta
 
 # === 1. Inicialización de Estado (Memoria de la App) ===
 if 'meal_limit_hours' not in st.session_state:
-    st.session_state['meal_limit_hours'] = 6.0 # Default: 6 horas
+    st.session_state['meal_limit_hours'] = 5.0 # CA Law: Break required if > 5.0 hours
 
 if 'min_break_minutes' not in st.session_state:
-    st.session_state['min_break_minutes'] = 30 # Default: 30 minutos
+    st.session_state['min_break_minutes'] = 30 # CA Law: 30 minutes
 
-# === Función para procesar CSV de Toast (Actualizada) ===
-# Ahora recibe limit_hours y min_break_hours como argumentos
+# === Función Lógica Principal (REFACTORIZADA) ===
 def process_csv_toast(file, limit_hours, min_break_hours, progress_bar=None):
     df = pd.read_csv(file)
-
-    steps = [
-        ("📂 Cargando archivo...", 0.2),
-        ("⏱️ Convirtiendo horarios...", 0.4),
-        ("🧮 Calculando horas totales...", 0.6),
-        ("🔍 Buscando violaciones...", 0.8),
-        ("✅ Finalizando...", 1.0)
-    ]
-
-    if progress_bar:
-        for msg, pct in steps:
-            progress_bar.progress(pct, text=msg)
-            # time.sleep(0.4) # Comentado para hacerlo más rápido, descomenta si prefieres el efecto
-
-    df = df[df['Employee'].notna() & df['Date'].notna()]
-
-    def parse_datetime(row, date_col, time_col):
+    
+    # 1. Limpieza inicial
+    df = df.dropna(subset=['Employee', 'Date'])
+    
+    # 2. Parsers de Fecha y Hora Inteligentes
+    def parse_dt(date_str, time_str):
         try:
-            return pd.to_datetime(f"{row[date_col]} {row[time_col]}", format="%b %d, %Y %I:%M %p")
+            return pd.to_datetime(f"{date_str} {time_str}", format="%b %d, %Y %I:%M %p")
         except:
             return pd.NaT
 
-    df["Clock In"] = df.apply(lambda row: parse_datetime(row, "Date", "Time In"), axis=1)
-    df["Clock Out"] = df.apply(lambda row: parse_datetime(row, "Date", "Time Out"), axis=1)
+    # Helper para manejar turnos que cruzan medianoche (PM -> AM)
+    def parse_time_conditional(date_dt, time_str, ref_dt):
+        if pd.isna(ref_dt) or pd.isna(time_str):
+            return pd.NaT
+        try:
+            # Asumimos misma fecha primero
+            dt = pd.to_datetime(f"{date_dt.strftime('%b %d, %Y')} {time_str}", format="%b %d, %Y %I:%M %p")
+            # Si la hora es anterior al inicio del turno (ej. Start 8PM, Break 2AM), sumamos un día
+            if dt < ref_dt:
+                dt += timedelta(days=1)
+            return dt
+        except:
+            return pd.NaT
 
-    df["Regular Hours"] = pd.to_numeric(df["Regular Hours"], errors='coerce')
-    df["Estimated Overtime"] = pd.to_numeric(df.get("Estimated Overtime", 0), errors='coerce').fillna(0)
+    # Crear columna datetime para el inicio
+    df['DateTime_In'] = df.apply(lambda row: parse_dt(row['Date'], row['Time In']), axis=1)
     
-    df["Total Hours"] = df["Regular Hours"] + df["Estimated Overtime"]
-    df["Date"] = df["Clock In"].dt.date
+    # Convertir métricas a numérico
+    cols_to_numeric = ['Total Hours', 'Regular Hours', 'Estimated Overtime', 'Break Duration']
+    for col in cols_to_numeric:
+        df[col] = pd.to_numeric(df.get(col, 0), errors='coerce').fillna(0)
 
-    df["Break Duration"] = pd.to_numeric(df["Break Duration"], errors='coerce') 
-
-    grouped = df.groupby(["Employee", "Date"]) 
+    # 3. Agrupación por Empleado y Día (Manejo de Double Clock-outs)
+    grouped = df.groupby(['Employee', 'Date'])
     violations = []
 
-    for (name, date), group in grouped:
-        total_hours = group["Total Hours"].sum()
+    total_groups = len(grouped)
+    processed_count = 0
 
-        # === Lógica Dinámica ===
-        # Usamos la variable min_break_hours pasada como argumento
-        missed_break = group[(group["Break Duration"].isna()) | 
-                             (group["Break Duration"] < min_break_hours) | # <--- DYNAMIC
-                             (group["Break Duration"] == "MISSED")]
+    for (emp, date_str), group in grouped:
+        processed_count += 1
+        if progress_bar and processed_count % 10 == 0:
+            progress_bar.progress(processed_count / total_groups, text="Analizando turnos complejos...")
 
-        # Usamos la variable limit_hours pasada como argumento
-        if not missed_break.empty and total_hours > limit_hours: # <--- DYNAMIC
+        # Métricas del Día Completo (Agregado)
+        total_hours = group['Total Hours'].sum()
+        reg_hours = group['Regular Hours'].sum()
+        ot_hours = group['Estimated Overtime'].sum()
+        
+        # Determinar el verdadero inicio del turno (la primera entrada del día)
+        valid_starts = group['DateTime_In'].dropna()
+        if valid_starts.empty:
+            continue
+        shift_start = valid_starts.min()
+        
+        # Recolectar TODOS los descansos válidos del día
+        valid_breaks = []
+        for _, row in group.iterrows():
+            if row['Break Duration'] >= min_break_hours: # Filtro de duración mínima (ej. 30 min)
+                # Calcular hora real del descanso relativa al inicio
+                b_start = parse_time_conditional(shift_start, row['Break Start'], shift_start)
+                if pd.notna(b_start):
+                    valid_breaks.append(b_start)
+        
+        valid_breaks.sort()
+        
+        # === REGLAS DE AUDITORÍA ===
+        
+        violation_type = None
+        details = ""
+
+        # Regla 1: Violación de 1er Descanso (> 5 horas)
+        if total_hours > limit_hours:
+            deadline_5th = shift_start + timedelta(hours=limit_hours)
+            
+            if not valid_breaks:
+                violation_type = "Missed Meal Break"
+                details = f"Turno de {total_hours:.2f}h sin descanso válido."
+            else:
+                # Verificar si el PRIMER descanso fue tarde
+                first_break = valid_breaks[0]
+                if first_break > deadline_5th:
+                    violation_type = "Late Meal Break"
+                    break_time_str = first_break.strftime('%I:%M %p')
+                    limit_str = deadline_5th.strftime('%I:%M %p')
+                    details = f"Descanso a las {break_time_str} (Límite: {limit_str})"
+
+        # Si ya hay violación, la guardamos. Si no, revisamos el 2do descanso.
+        if violation_type:
             violations.append({
-                "Nombre": name,
-                "Date": date,
-                "Regular Hours": round(group["Regular Hours"].sum(), 2),
-                "Overtime Hours": round(group["Estimated Overtime"].sum(), 2),
+                "Nombre": emp,
+                "Date": date_str,
+                "Regular Hours": round(reg_hours, 2),
+                "Overtime Hours": round(ot_hours, 2),
                 "Total Horas Día": round(total_hours, 2),
-                "Violación": "Meal Violation"
+                "Violación": violation_type,
+                "Detalles": details
             })
+        
+        # Regla 2: Violación de 2do Descanso (> 10 horas)
+        # Nota: CA exige 2do descanso a las 10h. Se puede renunciar si < 12h.
+        if total_hours > 10.0:
+            deadline_10th = shift_start + timedelta(hours=10)
+            
+            # Necesitamos al menos 2 descansos
+            if len(valid_breaks) < 2:
+                waiver_status = "(Posible Waiver)" if total_hours <= 12.0 else "(NO Renunciable >12h)"
+                # Solo agregamos si no hay ya una violación de "Missed Meal" (para no duplicar penalidad visual)
+                # O si queremos reportar ambas. Reportemos ambas para claridad.
+                violations.append({
+                    "Nombre": emp,
+                    "Date": date_str,
+                    "Regular Hours": round(reg_hours, 2),
+                    "Overtime Hours": round(ot_hours, 2),
+                    "Total Horas Día": round(total_hours, 2),
+                    "Violación": "Missing 2nd Meal",
+                    "Detalles": f"Turno > 10h. Solo {len(valid_breaks)} descansos. {waiver_status}"
+                })
+            elif len(valid_breaks) >= 2:
+                # Verificar si el 2do descanso fue tarde (después de la hora 10)
+                second_break = valid_breaks[1]
+                if second_break > deadline_10th:
+                    violations.append({
+                        "Nombre": emp,
+                        "Date": date_str,
+                        "Regular Hours": round(reg_hours, 2),
+                        "Overtime Hours": round(ot_hours, 2),
+                        "Total Horas Día": round(total_hours, 2),
+                        "Violación": "Late 2nd Meal",
+                        "Detalles": f"2do descanso tarde: {second_break.strftime('%I:%M %p')}"
+                    })
 
     return pd.DataFrame(violations)
 
 # === Configuración Streamlit ===
-st.set_page_config(page_title="Meal Violations Toast", page_icon="🌮", layout="wide")
+st.set_page_config(page_title="Auditoría Toast", page_icon="🌮", layout="wide")
 
 # Sidebar
 st.sidebar.title("Menú Principal")
 menu = st.sidebar.radio("Navegación", ("Dashboard", "Configuración"))
 
-# === Estilos Freedash ===
+# === Estilos CSS ===
 st.markdown("""
     <style>
     body { background-color: #f4f6f9; }
-    header, footer {visibility: hidden;}
-    .block-container { padding-top: 2rem; }
     .metric-card {
         background: white; padding: 20px; border-radius: 10px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center;
     }
-    .card-title { font-size: 18px; color: #6c757d; margin-bottom: 0.5rem; }
-    .card-value { font-size: 30px; font-weight: bold; color: #343a40; }
-    .stButton > button {
-        background-color: #009efb; color: white; padding: 0.75rem 1.5rem;
-        border: none; border-radius: 8px; font-weight: bold; width: 100%;
-    }
-    .stButton > button:hover { background-color: #007acc; color: white; }
+    .card-title { font-size: 16px; color: #6c757d; }
+    .card-value { font-size: 28px; font-weight: bold; color: #2c3e50; }
     </style>
 """, unsafe_allow_html=True)
 
-# === Dashboard principal ===
+# === VISTA DASHBOARD ===
 if menu == "Dashboard":
-    st.markdown("""
-        <h1 style='text-align: center; color: #343a40;'>Meal Violations Detector</h1>
-        <p style='text-align: center; color: #6c757d;'>
-            Reglas actuales: Turnos > <b>{}h</b> | Descanso mín: <b>{} min</b>
-        </p>
-        <hr style='margin-top: 0px;'>
-    """.format(st.session_state['meal_limit_hours'], st.session_state['min_break_minutes']), unsafe_allow_html=True)
+    st.markdown(f"""
+        <h2 style='text-align: center;'>🛡️ Auditoría de Tiempos Toast</h2>
+        <div style='text-align: center; color: gray; font-size: 0.9em; margin-bottom: 20px;'>
+            Reglas Activas: Límite <b>{st.session_state['meal_limit_hours']}h</b> | 
+            Descanso Mínimo <b>{st.session_state['min_break_minutes']} min</b>
+        </div>
+    """, unsafe_allow_html=True)
 
-    file = st.file_uploader("📤 Sube tu archivo CSV de Toast", type=["csv"])
+    file = st.file_uploader("Arrastra tu archivo CSV de Toast aquí", type=["csv"])
 
     if file:
-        progress_bar = st.progress(0, text="Iniciando análisis...")
+        progress_bar = st.progress(0, text="Leyendo archivo...")
         
-        # Convertimos minutos a horas para la lógica (ej. 30 min / 60 = 0.5h)
+        # Conversión de minutos a horas para la lógica interna
         min_break_hours = st.session_state['min_break_minutes'] / 60.0
         
-        # Pasamos las variables de session_state a la función
         violations_df = process_csv_toast(
             file, 
             limit_hours=st.session_state['meal_limit_hours'],
@@ -128,100 +195,78 @@ if menu == "Dashboard":
         progress_bar.empty()
 
         if not violations_df.empty:
-            st.success('✅ Análisis completado.')
+            st.success(f'✅ Análisis completado. Se encontraron {len(violations_df)} posibles violaciones.')
             
-            total_violations = len(violations_df)
-            unique_employees = violations_df['Nombre'].nunique()
-            dates_analyzed = violations_df['Date'].nunique()
-
-            st.markdown("## 📈 Resumen General")
+            # Métricas
             col1, col2, col3 = st.columns(3)
-
             with col1:
-                st.markdown(f"""<div class="metric-card"><div class="card-title">Violaciones Detectadas</div><div class="card-value">{total_violations}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Total Violaciones</div><div class="card-value">{len(violations_df)}</div></div>""", unsafe_allow_html=True)
             with col2:
-                st.markdown(f"""<div class="metric-card"><div class="card-title">Empleados Afectados</div><div class="card-value">{unique_employees}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Empleados Únicos</div><div class="card-value">{violations_df['Nombre'].nunique()}</div></div>""", unsafe_allow_html=True)
             with col3:
-                st.markdown(f"""<div class="metric-card"><div class="card-title">Días Analizados</div><div class="card-value">{dates_analyzed}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="metric-card"><div class="card-title">Late Breaks</div><div class="card-value">{len(violations_df[violations_df['Violación'].str.contains('Late')])}</div></div>""", unsafe_allow_html=True)
 
             st.markdown("---")
-            st.markdown("## 📋 Detalle de Violaciones")
-            st.dataframe(violations_df, use_container_width=True)
+            st.markdown("### 📋 Detalle de Incidencias")
+            
+            # Formato condicional para la tabla
+            st.dataframe(
+                violations_df.style.applymap(
+                    lambda x: 'color: red; font-weight: bold' if 'Missing' in str(x) else ('color: orange' if 'Late' in str(x) else ''), 
+                    subset=['Violación']
+                ), 
+                use_container_width=True
+            )
 
-            violation_counts = violations_df["Nombre"].value_counts().reset_index()
-            violation_counts.columns = ["Empleado", "Número de Violaciones"]
+            # Gráfico Interactivo
+            st.markdown("### 📊 Incidencias por Empleado")
+            chart_data = violations_df["Nombre"].value_counts().reset_index()
+            chart_data.columns = ["Empleado", "Violaciones"]
+            
+            chart = alt.Chart(chart_data).mark_bar(color="#ff6b6b").encode(
+                x=alt.X('Violaciones', title='Cantidad'),
+                y=alt.Y('Empleado', sort='-x', title=''),
+                tooltip=['Empleado', 'Violaciones']
+            ).properties(height=350)
+            st.altair_chart(chart, use_container_width=True)
 
-            st.markdown("## 📊 Violaciones por Empleado")
-            col_graph, col_table = st.columns([2, 1])
-
-            with col_graph:
-                # Versión interactiva (más moderna)
-                chart = alt.Chart(violation_counts).mark_bar(color="#009efb", cornerRadiusEnd=5).encode(
-                    x=alt.X('Número de Violaciones', title='Total Violaciones'),
-                    y=alt.Y('Empleado', sort='-x', title=''),
-                    tooltip=['Empleado', 'Número de Violaciones']
-                ).properties(height=400)
-                st.altair_chart(chart, use_container_width=True)
-
-            with col_table:
-                st.dataframe(violation_counts, use_container_width=True)
-
+            # Descarga
             csv = violations_df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ Descargar CSV", data=csv, file_name="meal_violations.csv", mime="text/csv")
+            st.download_button("⬇️ Descargar Reporte CSV", data=csv, file_name="auditoria_meal_break.csv", mime="text/csv")
+        
         else:
             st.balloons()
-            st.success("¡Felicidades! No se encontraron violaciones con los parámetros actuales.")
+            st.success("🎉 ¡Excelente! No se encontraron violaciones bajo las reglas actuales.")
 
-# === Pestaña de Configuración ===
+# === VISTA CONFIGURACIÓN ===
 elif menu == "Configuración":
-    st.markdown("# ⚙️ Configuración de Auditoría")
-    st.markdown("Ajusta las reglas para la detección de violaciones.")
+    st.header("⚙️ Configuración de Reglas")
     
-    st.markdown("---")
+    col1, col2 = st.columns(2)
     
-    col_config1, col_config2 = st.columns(2)
-    
-    with col_config1:
-        st.markdown("### 🕒 Reglas de Turno")
-        
-        # Input para Horas Totales
+    with col1:
+        st.markdown("#### Parámetros de Meal Penalty")
         new_limit = st.number_input(
-            "Límite de horas para exigir Meal Break (Horas)",
-            min_value=4.0, 
-            max_value=12.0, 
-            value=st.session_state['meal_limit_hours'],
-            step=0.5,
-            help="Si un empleado trabaja más de estas horas, debe tener un descanso registrado."
+            "Hora límite para iniciar descanso (California = 5.0)",
+            min_value=4.0, max_value=8.0, 
+            value=st.session_state['meal_limit_hours'], step=0.5
         )
         
-        # Input para Duración del Descanso
         new_break_min = st.number_input(
-            "Duración mínima aceptable del descanso (Minutos)", 
-            min_value=10, 
-            max_value=60, 
-            value=int(st.session_state['min_break_minutes']),
-            step=5,
-            help="Cualquier descanso menor a esto se considerará una violación."
+            "Duración mínima válida del descanso (Minutos)",
+            min_value=10, max_value=60, 
+            value=int(st.session_state['min_break_minutes']), step=5
         )
-
-        # Botón para guardar
-        if st.button("💾 Guardar Configuración"):
+        
+        if st.button("💾 Guardar Cambios"):
             st.session_state['meal_limit_hours'] = new_limit
             st.session_state['min_break_minutes'] = new_break_min
-            st.success("Configuración actualizada. Vuelve al Dashboard para analizar con las nuevas reglas.")
+            st.success("Reglas actualizadas. Vuelve al Dashboard para re-analizar.")
 
-    with col_config2:
-        st.info(f"""
-        **Configuración Actual:**
-        
-        * **Límite de turno:** > {st.session_state['meal_limit_hours']} horas
-        * **Descanso mínimo:** {st.session_state['min_break_minutes']} minutos
-        
-        Si cambias estos valores, asegúrate de presionar "Guardar" y volver a cargar tu archivo en el Dashboard.
+    with col2:
+        st.info("""
+        **Guía Rápida:**
+        * **5.0 Horas:** En CA, el descanso debe comenzar *antes* de terminar la 5ta hora de trabajo.
+        * **Double Clock-outs:** El sistema ahora agrupa automáticamente turnos partidos en el mismo día.
+        * **2nd Meal:** Se detectará automáticamente si faltan 2dos descansos en turnos > 10 horas.
         """)
-        
-        # Botón de Reset
-        if st.button("🔄 Restaurar valores por defecto"):
-            st.session_state['meal_limit_hours'] = 6.0
-            st.session_state['min_break_minutes'] = 30
-            st.rerun()
